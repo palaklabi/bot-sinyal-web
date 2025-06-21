@@ -12,7 +12,12 @@ CHAT_ID = "5991757052"
 def kirim_telegram(pesan):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     data = {"chat_id": CHAT_ID, "text": pesan}
-    requests.post(url, data=data)
+    try:
+        response = requests.post(url, data=data)
+        if response.status_code != 200:
+            st.warning(f"Gagal kirim ke Telegram: {response.text}")
+    except Exception as e:
+        st.error(f"Error kirim ke Telegram: {e}")
 
 def fetch_price(symbol):
     try:
