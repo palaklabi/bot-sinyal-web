@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Monitor Sinyal Scalping (Longgar)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: Arial, sans-serif; background: #111; color: #eee; padding: 20px; }
+    h1 { font-size: 22px; text-align: center; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; background: #222; border-radius: 10px; overflow: hidden; }
+    th, td { border: 1px solid #444; padding: 8px; text-align: center; }
+    th { background: #333; color: #fff; }
+    .buy { color: #00ff00; font-weight: bold; }
+    .sell { color: #ff3333; font-weight: bold; }
+    .neutral { color: #cccccc; }
+    .warn { color: orange; }
+    button { padding: 4px 10px; border-radius: 5px; background: #555; color: white; cursor: pointer; }
+  </style>
+</head>
+<body>
+<h1>Sinyal BUY Longgar + Potensi STRONG BUY</h1>
+<audio id="alertSound">
+  <source src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" type="audio/ogg">
+</audio>
+
+<table>
+  <thead>
+    <tr>
+      <th>Koin</th>
+      <th>Harga</th>
+      <th>EMA Cek</th>
+      <th>Breakout</th>
+      <th>Rasio B/S</th>
+      <th>Sinyal</th>
+      <th>Aksi</th>
+    </tr>
+  </thead>
+  <tbody id="tableBody">
+    <tr><td colspan="7">Memuat data...</td></tr>
+  </tbody>
+</table>
+
+<script>
+const BOT = "7844418185:AAGNywzrPEK2Z6vVEmy11d_8T2G0HDndQJ4";
+const CHAT = "5991757052";
+let prev = {};
+
+function sendTelegram(msg){
+ fetch(`https://api.telegram.org/bot${BOT}/sendMessage`,{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({chat_id:CHAT,text:msg})
+ })
+}
+
+function signalRow(coin, price, ema, breakout, ratio, signalMsg){
+ const row = document.createElement("tr");
+ row.innerHTML = `
+ <td>${coin}</td>
+ <td>${price}</td>
+ <td class="${ema}">${ema}</td>
+ <td class="${breakout}">${breakout}</td>
+ <td class="${ratio}">${ratio}</td>
+ <td class="${signalMsg.includes('STRONG')?'buy':(signalMsg.includes('MODERATE')?'warn':'neutral')}">${signalMsg}</td>
+ <td><button onclick="sendTelegram('${coin}: ${signalMsg} @${price}')">Kirim</button></td>
+ `;
+ return row;
+}
+
+async function load(){
+ const tbody = document.getElementById("tableBody");
+ tbody.innerHTML = "";
+ let res = await fetch("https://indodax.com/api/summaries");
+ let data = await res.json();
+ let volList = [];
+ for(let [pair,v] of Object.entries(data.tickers)){
+   if(!pair.endsWith("_idr")) continue;
+   let now = parseFloat(v.volume);
+   let last = prev[pair]||now;
+   prev[pair] = now;
+   volList.push({pair,delta:now-last,vol_buy:parseFloat(v.vol_buy),vol_sell:parseFloat(v.vol_sell)});
+ }
+ volList.sort((a,b)=>b.delta-a.delta);
+ let top = volList.slice(0,20);
+
+ for(let coinData of top){
+   let pair = coinData.pair;
+   let res = await fetch(`https://indodax.com/api/ticker/${pair}`);
+   let data = await res.json();
+   let price = parseFloat(data.ticker.last);
+   let ema5 = price - 0.3;
+   let ema20 = price - 0.6;
+   let ema50 = price - 1;
+
+   let emaPass = price > ema5 && ema5 > ema20;
+   let breakout = price > ema20;
+   let rasioBS = coinData.vol_sell>0 ? (coinData.vol_buy/coinData.vol_sell).toFixed(2):"∞";
+   let ratioPass = parseFloat(rasioBS)>=1.5;
+
+   let sinyal = "Tunggu";
+   if(emaPass && breakout && ratioPass){
+     sinyal = "✅ STRONG BUY";
+     document.getElementById("alertSound").play();
+     sendTelegram(`📈 STRONG BUY\n${pair.toUpperCase()}\nHarga: ${price}\nRasio B/S: ${rasioBS}`);
+   }
+   else if((emaPass&&ratioPass)||(breakout&&ratioPass)) sinyal="⚠️ MODERATE BUY";
+   else if(emaPass||breakout||ratioPass) sinyal="🔎 WATCHLIST";
+
+   tbody.appendChild(signalRow(pair.toUpperCase(), price, emaPass?"✅":"❌", breakout?"✅":"❌", rasioBS, sinyal));
+ }
+}
+
+load();
+setInterval(load, 60000);
+</script>
+</body>
+</html>
